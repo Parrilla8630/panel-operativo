@@ -744,7 +744,11 @@ async function cargarAJParaCarpetas(cards){
 
 function procesarAJ(card,acciones){
   const lastRevKey='ajRev_'+card.id;
-  const lastRev=parseInt(localStorage.getItem(lastRevKey)||'0');
+  const lastRevGuardado=parseInt(localStorage.getItem(lastRevKey)||'0');
+  // Si nunca se revisó esta carpeta, no mostrar TODO el historial: cortar a las últimas 3 semanas
+  const TOPE_PRIMERA_VEZ=21*86400000;
+  const esPrimeraVez=lastRevGuardado===0;
+  const lastRev=esPrimeraVez?(Date.now()-TOPE_PRIMERA_VEZ):lastRevGuardado;
 
   // Comentarios que contienen líneas de AJ/OBS
   const comentarios=acciones.filter(a=>a.type==='commentCard');
@@ -784,7 +788,7 @@ function procesarAJ(card,acciones){
     alertaFondos=precioUSD>=umbralUSD*0.9; // avisa cerca del límite, no solo al cruzarlo
   }
 
-  return{pendientesActivos,actividadNueva,precioUSD,umbralUSD,alertaFondos,lastRev,sinRevisar:actividadNueva.length>0};
+  return{pendientesActivos,actividadNueva,precioUSD,umbralUSD,alertaFondos,lastRev,sinRevisar:actividadNueva.length>0,esPrimeraVez};
 }
 
 function marcarRevisado(cardId){
@@ -798,6 +802,9 @@ function renderAJ(data){
   const el=document.getElementById('vista-aj');
   const conDatos=data.filter(c=>c.aj&&!c.aj.error);
   if(!conDatos.length){el.innerHTML='<div class="loading">Cargando comentarios y novedades de cada carpeta…</div>';return;}
+
+  const hayPrimeraVez=conDatos.some(c=>c.aj.esPrimeraVez&&c.aj.actividadNueva.length);
+  const notaPrimeraVez=hayPrimeraVez?`<div style="font-size:11px;color:var(--text2);background:#F8FAFC;border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px">Las carpetas marcadas "(últimas 3 sem.)" son las que todavía no revisaste con este sistema — por eso muestran actividad de varias semanas atrás, no solo de hoy. Tocá "✓ Revisado" en cada una y de ahí en más solo vas a ver lo realmente nuevo.</div>`:'';
 
   const badge=document.getElementById('aj-badge');
   const conNovedad=conDatos.filter(c=>c.aj.sinRevisar||c.aj.alertaFondos).length;
@@ -813,16 +820,26 @@ function renderAJ(data){
     return 4;
   };
   const sorted=[...conDatos].sort((a,b)=>orden(a)-orden(b));
+  const conAlgo=sorted.filter(c=>orden(c)<4);
+  const alDia=sorted.filter(c=>orden(c)===4);
 
-  el.innerHTML=sorted.map(c=>{
+  const bloqueAlDia=alDia.length?`<div style="font-size:11px;color:var(--text2);margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
+    <strong>${alDia.length} carpeta${alDia.length!==1?'s':''} al día</strong> (sin novedades ni pendientes activos): ${alDia.map(c=>`<a href="${c.url}" target="_blank" style="color:var(--text2)">${c.nombre}</a>`).join(', ')}
+  </div>`:'';
+
+  if(!conAlgo.length){
+    el.innerHTML=notaPrimeraVez+'<div class="empty">Ninguna carpeta tiene novedades ni pendientes activos por ahora. 👍</div>'+bloqueAlDia;
+    return;
+  }
+
+  el.innerHTML=notaPrimeraVez+`<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Mostrando ${conAlgo.length} de ${conDatos.length} carpetas — las que tienen algo para revisar.</div>`+conAlgo.map(c=>{
     const aj=c.aj;
-    const sinNovedad=!aj.sinRevisar&&!aj.alertaFondos&&!aj.pendientesActivos.length;
-    return `<div class="confronte-card" style="${sinNovedad?'opacity:.55':''}">
+    return `<div class="confronte-card">
       <div class="confronte-title">
         <span><a href="${c.url}" target="_blank" style="color:var(--navy);text-decoration:none">${c.nombre}</a> <span style="font-size:11px;font-weight:400;color:var(--text2)">${c.board} · ${c.lista}</span></span>
         <div style="display:flex;gap:5px;align-items:center">
           ${aj.alertaFondos?`<span class="pill pill-err">💵 Origen de fondos: U$S ${Math.round(aj.precioUSD).toLocaleString('es-AR')} vs umbral U$S ${Math.round(aj.umbralUSD).toLocaleString('es-AR')}</span>`:''}
-          ${aj.sinRevisar?`<span class="pill pill-warn">${aj.actividadNueva.length} novedad${aj.actividadNueva.length!==1?'es':''}</span>`:''}
+          ${aj.sinRevisar?`<span class="pill pill-warn">${aj.actividadNueva.length} novedad${aj.actividadNueva.length!==1?'es':''}${aj.esPrimeraVez?' (últimas 3 sem.)':''}</span>`:''}
           ${aj.pendientesActivos.length?`<span class="pill pill-gray">${aj.pendientesActivos.length} OBS activa${aj.pendientesActivos.length!==1?'s':''}</span>`:''}
           <button class="ver-btn" onclick="marcarRevisado('${c.id}')">✓ Revisado</button>
         </div>
@@ -838,9 +855,8 @@ function renderAJ(data){
         <div style="font-weight:600;margin-bottom:4px;color:var(--text)">Pendientes de AJ (⚠ OBS activas):</div>
         ${aj.pendientesActivos.map(p=>`<div style="padding:4px 0;border-top:1px solid var(--border)">${p.slice(0,220)}${p.length>220?'…':''}</div>`).join('')}
       </div>`:''}
-      ${sinNovedad?'<div style="font-size:12px;color:var(--text2)">Sin novedades ni pendientes activos.</div>':''}
     </div>`;
-  }).join('');
+  }).join('')+bloqueAlDia;
 }
 
 // ── GOOGLE CALENDAR ──
