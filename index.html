@@ -170,6 +170,14 @@ tr:hover td{background:#F8FAFC}
       <button class="tab" onclick="switchTab('confronte',this)">Pre-firma 📋</button>
       <button class="tab" onclick="switchTab('referencistas',this)">Referencistas</button>
       <button class="tab" onclick="switchTab('comerciales',this)">Por comercial</button>
+      <button class="tab" onclick="switchTab('aj',this)">Revisión AJ <span id="aj-badge" style="display:none"></span></button>
+    </div>
+
+    <div class="filters" id="aj-config" style="display:none">
+      <span style="font-size:11px;color:var(--text2);align-self:center">Umbral origen de fondos:</span>
+      <input type="text" id="cfg-smvm" placeholder="SMVM vigente ($)" style="max-width:130px" oninput="guardarConfigAJ()">
+      <input type="text" id="cfg-dolar" placeholder="Dólar BNA vendedor" style="max-width:150px" oninput="guardarConfigAJ()">
+      <span id="aj-umbral-txt" style="font-size:11px;color:var(--text2);align-self:center"></span>
     </div>
 
     <div class="filters" id="filtros">
@@ -205,6 +213,7 @@ tr:hover td{background:#F8FAFC}
     <div id="vista-confronte" style="display:none"></div>
     <div id="vista-referencistas" style="display:none"></div>
     <div id="vista-comerciales" style="display:none"></div>
+    <div id="vista-aj" style="display:none"></div>
   </div>
 </div>
 
@@ -283,8 +292,21 @@ function extractFechaFirma(cls){
   }return null;
 }
 
-function detectarCertificados(atts){return atts.some(a=>{const n=a.name||a.fileName||'';return n.startsWith('98_')||/^E\d+/i.test(n);});}
-function detectarBorrador(atts){return atts.some(a=>{const n=(a.name||a.fileName||'').toLowerCase();return n.includes('borrador')||n.includes('draft')||n.endsWith('.docx')||n.endsWith('.doc');});}
+function esCertificadoNombre(n){
+  const nl=n.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  return n.startsWith('98_')||/^E\d+/i.test(n)||nl.startsWith('dominio')||nl.startsWith('inhibicion');
+}
+function detectarCertificados(atts){return atts.some(a=>esCertificadoNombre(a.name||a.fileName||''));}
+function detectarBorrador(atts){
+  const EXCLUIR=['nota','informe','certificado','formulario','acta','poder','carta','constancia','declaracion jurada','declaración jurada','cedula','cédula','recibo','comprobante','minuta','adecuada','304cccn','304 cccn'];
+  return atts.some(a=>{
+    const n=(a.name||a.fileName||'').toLowerCase();
+    if(!(n.endsWith('.docx')||n.endsWith('.doc')))return false;
+    const nl=n.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if(EXCLUIR.some(ex=>nl.includes(ex.normalize('NFD').replace(/[\u0300-\u036f]/g,''))))return false;
+    return true;
+  });
+}
 
 function diasHabilesHasta(f){
   if(!f)return null;let count=0,cur=new Date(hoy);
@@ -344,7 +366,7 @@ async function init(){
         // Adjuntos de firma (cert + borrador) con fecha
         const adjsFirma=atts.filter(a=>{
           const n=a.name||a.fileName||'';
-          return n.startsWith('98_')||/^E\d+/i.test(n)||
+          return esCertificadoNombre(n)||
             (()=>{const nl=n.toLowerCase();return nl.includes('borrador')||nl.includes('draft')||nl.endsWith('.docx')||nl.endsWith('.doc');})();
         });
 
@@ -362,6 +384,7 @@ async function init(){
     document.getElementById('main').style.display='block';
     document.getElementById('ultima-act').textContent='Actualizado '+new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     render();
+    cargarAJParaCarpetas(cards); // se completa en segundo plano y re-renderiza
   }catch(e){
     document.getElementById('loading').textContent='Error: '+e.message;
     if(e.message.includes('401'))mostrarConfig();
@@ -370,12 +393,15 @@ async function init(){
 
 function switchTab(t,btn){
   tabActual=t;
+  if(t==='aj')cargarConfigAJInputs();
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
   document.getElementById('vista-carpetas').style.display=t==='carpetas'?'block':'none';
   document.getElementById('vista-confronte').style.display=t==='confronte'?'block':'none';
   document.getElementById('vista-referencistas').style.display=t==='referencistas'?'block':'none';
   document.getElementById('vista-comerciales').style.display=t==='comerciales'?'block':'none';
+  document.getElementById('vista-aj').style.display=t==='aj'?'block':'none';
   document.getElementById('filtros').style.display=t==='carpetas'?'flex':'none';
+  document.getElementById('aj-config').style.display=t==='aj'?'flex':'none';
   render();
 }
 
@@ -401,6 +427,28 @@ function render(){
   else if(tabActual==='confronte')renderConfronte(all);
   else if(tabActual==='referencistas')renderReferencistas(all);
   else if(tabActual==='comerciales')renderComerciales(all);
+  else if(tabActual==='aj')renderAJ(all);
+}
+
+// ── CONFIG UMBRAL ORIGEN DE FONDOS ──
+function getSMVM(){return parseFloat(localStorage.getItem('cfg_smvm')||'0');}
+function getDolar(){return parseFloat(localStorage.getItem('cfg_dolar')||'0');}
+function guardarConfigAJ(){
+  localStorage.setItem('cfg_smvm',document.getElementById('cfg-smvm').value.replace(/\./g,'').replace(',','.'));
+  localStorage.setItem('cfg_dolar',document.getElementById('cfg-dolar').value.replace(/\./g,'').replace(',','.'));
+  actualizarUmbralTxt();render();
+}
+function actualizarUmbralTxt(){
+  const smvm=getSMVM(),dolar=getDolar();
+  const txt=document.getElementById('aj-umbral-txt');
+  if(smvm>0&&dolar>0){
+    const umbralUsd=Math.round((smvm*700)/dolar);
+    txt.textContent=`≈ U$S ${umbralUsd.toLocaleString('es-AR')} (700 SMVM)`;
+  } else txt.textContent='Cargá SMVM y dólar para calcular el umbral';
+}
+function cargarConfigAJInputs(){
+  const s=localStorage.getItem('cfg_smvm')||'',d=localStorage.getItem('cfg_dolar')||'';
+  if(document.getElementById('cfg-smvm')){document.getElementById('cfg-smvm').value=s;document.getElementById('cfg-dolar').value=d;actualizarUmbralTxt();}
 }
 
 function renderMetrics(data){
@@ -624,6 +672,144 @@ function renderComerciales(data){
           <div class="confronte-checks">${etInfo}${certInfo}${borrInfo}</div>
         </div>`;
       }).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ── REVISIÓN AJ ──
+const KEYWORDS_AJ=['catastral','dominio','inhibici','estado civil','asentimiento','conyug','convivencial','usufruct','sucesi','declaratoria','herederos','tracto','poder','inversor','origen de fondos','sujeto obligado','pep','carátula','caratula','ganancial','propio','recompensa','bien de familia'];
+
+function extraerPrecioUSD(texto){
+  if(!texto)return null;
+  const m=texto.match(/(?:U\$S|USD|U\.S\.D\.?)\s*\$?\s*([\d][\d.,]*)/i);
+  if(!m)return null;
+  let n=m[1];
+  // Normalizar: si tiene coma y punto, el punto es miles y la coma decimales (formato AR)
+  if(n.includes(',')&&n.includes('.')) n=n.replace(/\./g,'').replace(',','.');
+  else if(n.includes(',')) n=n.replace(',','.');
+  else if((n.match(/\./g)||[]).length>1) n=n.replace(/\./g,'');
+  else if(n.includes('.')&&n.split('.')[1].length===3) n=n.replace('.',''); // 155.000 -> 155000
+  const v=parseFloat(n);
+  return isNaN(v)?null:v;
+}
+
+function extraerParrafosOBS(texto){
+  if(!texto)return[];
+  const parrafos=texto.split(/\n\s*\n/);
+  return parrafos.filter(p=>/⚠?\s*obs/i.test(p)).map(p=>p.trim());
+}
+
+async function cargarAJParaCarpetas(cards){
+  const CHUNK=8;
+  for(let i=0;i<cards.length;i+=CHUNK){
+    const lote=cards.slice(i,i+CHUNK);
+    await Promise.all(lote.map(async c=>{
+      try{
+        const acciones=await trello('/cards/'+c.id+'/actions?filter=commentCard,updateCard&memberCreator=true&memberCreator_fields=username,fullName&fields=type,date,data&limit=200');
+        c.aj=procesarAJ(c,acciones);
+      }catch(e){c.aj={error:true};}
+    }));
+    render();
+  }
+}
+
+function procesarAJ(card,acciones){
+  const lastRevKey='ajRev_'+card.id;
+  const lastRev=parseInt(localStorage.getItem(lastRevKey)||'0');
+
+  // Comentarios que contienen líneas de AJ/OBS
+  const comentarios=acciones.filter(a=>a.type==='commentCard');
+  let parrafosOBS=[];
+  comentarios.forEach(a=>{parrafosOBS=parrafosOBS.concat(extraerParrafosOBS(a.data.text));});
+  const pendientesActivos=parrafosOBS.filter(p=>!p.includes('~~'));
+
+  // Actividad nueva desde la última revisión, de otros (no vos)
+  const actividadNueva=acciones.filter(a=>{
+    if(new Date(a.date).getTime()<=lastRev)return false;
+    const autor=(a.memberCreator&&a.memberCreator.username)||'';
+    if(autor===ME)return false;
+    if(a.type==='commentCard')return true;
+    if(a.type==='updateCard'&&a.data&&a.data.old&&('name'in a.data.old||'desc'in a.data.old))return true;
+    return false;
+  }).map(a=>{
+    if(a.type==='commentCard')return{tipo:'comentario',autor:a.memberCreator?.fullName||'—',texto:a.data.text,fecha:a.date};
+    const cambiónombre='name'in a.data.old;
+    const valorViejo=cambiónombre?a.data.old.name:a.data.old.desc;
+    const valorNuevo=cambiónombre?(a.data.card&&a.data.card.name):(a.data.card&&a.data.card.desc);
+    const campoLabel=cambiónombre?'nombre/carátula':'descripción';
+    return{tipo:'cambio',autor:a.memberCreator?.fullName||'—',texto:`Cambió ${campoLabel}: "${valorViejo||''}" → "${valorNuevo||'(ver tarjeta)'}"`,fecha:a.date};
+  });
+
+  // Relevancia: marcar si matchea keywords AJ o si toca precio/inversor/carátula
+  actividadNueva.forEach(item=>{
+    const t=(item.texto||'').toLowerCase();
+    item.relevante=KEYWORDS_AJ.some(k=>t.includes(k));
+  });
+
+  // Precio y umbral origen de fondos
+  const precioUSD=extraerPrecioUSD(card.nombre)||extraerPrecioUSD(comentarios.map(a=>a.data.text).join(' '));
+  const smvm=getSMVM(),dolar=getDolar();
+  let alertaFondos=false,umbralUSD=null;
+  if(smvm>0&&dolar>0&&precioUSD){
+    umbralUSD=(smvm*700)/dolar;
+    alertaFondos=precioUSD>=umbralUSD*0.9; // avisa cerca del límite, no solo al cruzarlo
+  }
+
+  return{pendientesActivos,actividadNueva,precioUSD,umbralUSD,alertaFondos,lastRev,sinRevisar:actividadNueva.length>0};
+}
+
+function marcarRevisado(cardId){
+  localStorage.setItem('ajRev_'+cardId,Date.now().toString());
+  const c=allCards.find(x=>x.id===cardId);
+  if(c&&c.aj){c.aj.actividadNueva=[];c.aj.sinRevisar=false;c.aj.lastRev=Date.now();}
+  render();
+}
+
+function renderAJ(data){
+  const el=document.getElementById('vista-aj');
+  const conDatos=data.filter(c=>c.aj&&!c.aj.error);
+  if(!conDatos.length){el.innerHTML='<div class="loading">Cargando comentarios y novedades de cada carpeta…</div>';return;}
+
+  const badge=document.getElementById('aj-badge');
+  const conNovedad=conDatos.filter(c=>c.aj.sinRevisar||c.aj.alertaFondos).length;
+  if(conNovedad>0){badge.style.display='inline-block';badge.textContent='●';badge.style.color='var(--red)';}
+  else badge.style.display='none';
+
+  // Orden: alerta fondos primero, luego con actividad nueva relevante, luego con actividad nueva, luego con pendientes activos, luego el resto
+  const orden=c=>{
+    if(c.aj.alertaFondos)return 0;
+    if(c.aj.actividadNueva.some(a=>a.relevante))return 1;
+    if(c.aj.sinRevisar)return 2;
+    if(c.aj.pendientesActivos.length)return 3;
+    return 4;
+  };
+  const sorted=[...conDatos].sort((a,b)=>orden(a)-orden(b));
+
+  el.innerHTML=sorted.map(c=>{
+    const aj=c.aj;
+    const sinNovedad=!aj.sinRevisar&&!aj.alertaFondos&&!aj.pendientesActivos.length;
+    return `<div class="confronte-card" style="${sinNovedad?'opacity:.55':''}">
+      <div class="confronte-title">
+        <span><a href="${c.url}" target="_blank" style="color:var(--navy);text-decoration:none">${c.nombre}</a> <span style="font-size:11px;font-weight:400;color:var(--text2)">${c.board} · ${c.lista}</span></span>
+        <div style="display:flex;gap:5px;align-items:center">
+          ${aj.alertaFondos?`<span class="pill pill-err">💵 Origen de fondos: U$S ${Math.round(aj.precioUSD).toLocaleString('es-AR')} vs umbral U$S ${Math.round(aj.umbralUSD).toLocaleString('es-AR')}</span>`:''}
+          ${aj.sinRevisar?`<span class="pill pill-warn">${aj.actividadNueva.length} novedad${aj.actividadNueva.length!==1?'es':''}</span>`:''}
+          ${aj.pendientesActivos.length?`<span class="pill pill-gray">${aj.pendientesActivos.length} OBS activa${aj.pendientesActivos.length!==1?'s':''}</span>`:''}
+          <button class="ver-btn" onclick="marcarRevisado('${c.id}')">✓ Revisado</button>
+        </div>
+      </div>
+      ${aj.actividadNueva.length?`<div style="margin-bottom:8px">
+        ${aj.actividadNueva.map(a=>`<div class="adj-item" style="${a.relevante?'border-color:#d97706;background:#FFFBEB':''}">
+          <span>${a.tipo==='cambio'?'✏️':'💬'}</span>
+          <span class="adj-name" style="white-space:normal">${a.relevante?'<strong>':''}${a.autor}: ${(a.texto||'').slice(0,180)}${(a.texto||'').length>180?'…':''}${a.relevante?'</strong>':''}</span>
+          <span class="adj-date">${new Date(a.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span>
+        </div>`).join('')}
+      </div>`:''}
+      ${aj.pendientesActivos.length?`<div style="font-size:11px;color:var(--text2)">
+        <div style="font-weight:600;margin-bottom:4px;color:var(--text)">Pendientes de AJ (⚠ OBS activas):</div>
+        ${aj.pendientesActivos.map(p=>`<div style="padding:4px 0;border-top:1px solid var(--border)">${p.slice(0,220)}${p.length>220?'…':''}</div>`).join('')}
+      </div>`:''}
+      ${sinNovedad?'<div style="font-size:12px;color:var(--text2)">Sin novedades ni pendientes activos.</div>':''}
     </div>`;
   }).join('');
 }
