@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel Operativo RPV</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1A2E4A;--blue:#2a78d6;--green:#1baf7a;--amber:#d97706;--red:#dc2626;--bg:#F0F4F8;--surface:#fff;--border:#E2E8F0;--text:#1A2E4A;--text2:#64748B}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--navy);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.header-left{display:flex;align-items:center;gap:10px}
+.header-badge{background:var(--blue);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px;letter-spacing:.04em}
+.header-title{font-size:14px;font-weight:500;color:#fff}
+.header-sub{font-size:11px;color:rgba(255,255,255,0.5);margin-top:1px}
+.btn-sm{font-size:12px;padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:#fff;cursor:pointer;font-family:inherit}
+.btn-sm:hover{background:rgba(255,255,255,0.2)}
+.header-right{display:flex;align-items:center;gap:8px}
+/* Config */
+.config-box{background:#fff;border-radius:12px;padding:28px;width:380px}
+.config-box h2{font-size:15px;color:var(--navy);margin-bottom:6px}
+.config-box p{font-size:12px;color:var(--text2);margin-bottom:20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.field input{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace}
+.btn-primary{width:100%;padding:10px;background:var(--navy);color:#fff;border:none;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;margin-top:4px}
+/* Wrap */
+.wrap{padding:20px;max-width:1600px;margin:0 auto}
+/* Métricas */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.metric-label{font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.metric-val{font-size:24px;font-weight:600;color:var(--text)}
+.metric-val.red{color:var(--red)}
+.metric-val.amber{color:var(--amber)}
+.metric-val.green{color:var(--green)}
+/* Alert banner */
+.alert-banner{background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:none}
+.alert-banner.visible{display:flex;align-items:flex-start;gap:10px}
+.alert-banner-title{font-size:13px;font-weight:600;color:#92400E;margin-bottom:4px}
+.alert-banner-list{font-size:12px;color:#78350F;line-height:1.8}
+/* Tabs */
+.tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:14px}
+.tab{font-size:13px;padding:7px 16px;cursor:pointer;color:var(--text2);border:none;border-bottom:2px solid transparent;background:none;font-family:inherit}
+.tab.active{color:var(--navy);border-bottom-color:var(--navy);font-weight:500}
+/* Filtros */
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filters select,.filters input{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit}
+.filters input{flex:1;min-width:160px}
+/* Tabla */
+.table-wrap{overflow-x:auto;background:var(--surface);border-radius:10px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;font-weight:600;color:var(--text2);padding:8px 10px;border-bottom:1px solid var(--border);background:#F8FAFC;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#F8FAFC}
+/* Semáforo */
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;flex-shrink:0}
+/* Pills */
+.pill{display:inline-flex;align-items:center;font-size:10px;padding:2px 7px;border-radius:99px;font-weight:500;white-space:nowrap}
+.pill-ok{background:#DCFCE7;color:#166534}
+.pill-warn{background:#FEF3C7;color:#92400E}
+.pill-err{background:#FEE2E2;color:#991B1B}
+.pill-gray{background:#F1F5F9;color:#64748B}
+.pill-board{background:#EFF6FF;color:#1D4ED8;font-family:monospace;font-size:10px}
+.pill-ref{background:#F3E8FF;color:#6B21A8;font-size:10px}
+/* Fecha firma */
+.firma-vencida{color:var(--red);font-weight:500}
+.firma-prox{color:var(--amber);font-weight:500}
+.firma-ok{color:var(--green);font-weight:500}
+.firma-none{color:var(--text2)}
+/* Barra avance */
+.prog-wrap{height:4px;background:#E2E8F0;border-radius:99px;overflow:hidden;width:55px;display:inline-block}
+.prog-bar{height:4px;border-radius:99px}
+/* Panel lateral */
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:100}
+.panel-overlay.open{display:block}
+.panel{position:fixed;top:0;right:-560px;width:540px;height:100%;background:var(--surface);box-shadow:-4px 0 20px rgba(0,0,0,.1);z-index:101;transition:right .25s;display:flex;flex-direction:column}
+.panel.open{right:0}
+.panel-head{background:var(--navy);padding:14px 16px;flex-shrink:0;position:relative}
+.panel-head-name{font-size:13px;font-weight:600;color:#fff}
+.panel-head-meta{font-size:11px;color:rgba(255,255,255,.5);margin-top:2px}
+.panel-close{position:absolute;top:12px;right:14px;background:none;border:none;color:rgba(255,255,255,.6);font-size:17px;cursor:pointer}
+.panel-body{flex:1;overflow-y:auto;padding:16px}
+.panel-section{margin-bottom:18px}
+.panel-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.panel-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+.panel-row:last-child{border-bottom:none}
+.panel-row-label{color:var(--text2)}
+.adj-item{font-size:11px;padding:5px 8px;background:#F8FAFC;border-radius:6px;margin-bottom:4px;display:flex;align-items:center;gap:6px;border:1px solid var(--border)}
+.adj-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.adj-date{font-size:10px;color:var(--text2);flex-shrink:0}
+/* Vista referencistas */
+.ref-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.ref-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.ref-card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.ref-item{font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.ref-item:last-child{border-bottom:none}
+.ref-item-nombre{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.ref-item-meta{font-size:10px;color:var(--text2);margin-top:1px}
+/* Vista confronte */
+.confronte-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.confronte-title{font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.confronte-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
+.confronte-row:last-child{border-bottom:none}
+.confronte-nombre{font-weight:500;color:var(--text)}
+.confronte-checks{display:flex;gap:5px}
+.check-box{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500}
+.check-ok{background:#DCFCE7;color:#166534}
+.check-no{background:#FEE2E2;color:#991B1B}
+.check-warn{background:#FEF3C7;color:#92400E}
+.loading{text-align:center;padding:48px;color:var(--text2);font-size:13px}
+.empty{text-align:center;padding:24px;color:var(--text2);font-size:12px}
+.ver-btn{font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:#F8FAFC;color:var(--navy);cursor:pointer;font-family:inherit}
+.ver-btn:hover{background:var(--navy);color:#fff}
+</style>
+</head>
+<body>
+
+<div id="config-screen" style="display:none;position:fixed;inset:0;background:var(--navy);z-index:200;align-items:center;justify-content:center">
+  <div class="config-box">
+    <h2>Configurar Trello</h2>
+    <p>Ingresá tus credenciales. Se guardan en tu navegador.</p>
+    <div class="field"><label>API Key</label><input id="cfg-key" type="text"></div>
+    <div class="field"><label>Token</label><input id="cfg-token" type="password"></div>
+    <button class="btn-primary" onclick="guardarCredenciales()">Guardar y entrar</button>
+    <div id="cfg-error" style="color:#dc2626;font-size:12px;margin-top:8px"></div>
+  </div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <span class="header-badge">RPV</span>
+    <div>
+      <div class="header-title">Panel Operativo — Rocío Pérez Valenzuela</div>
+      <div class="header-sub" id="ultima-act">cargando...</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="btn-sm" onclick="init()">↺ Actualizar</button>
+    <button class="btn-sm" onclick="mostrarConfig()">⚙ Config</button>
+  </div>
+</header>
+
+<div class="panel-overlay" id="panelOverlay" onclick="cerrarPanel()"></div>
+<div class="panel" id="panel">
+  <div class="panel-head">
+    <div class="panel-head-name" id="panelNombre">—</div>
+    <div class="panel-head-meta" id="panelMeta">—</div>
+    <button class="panel-close" onclick="cerrarPanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<div class="wrap">
+  <div class="alert-banner" id="alertBanner">
+    <div style="font-size:18px;flex-shrink:0">⚠️</div>
+    <div>
+      <div class="alert-banner-title">Carpetas con firma próxima y documentación incompleta</div>
+      <div class="alert-banner-list" id="alertList"></div>
+    </div>
+  </div>
+
+  <div id="loading" class="loading">Conectando con Trello...</div>
+  <div id="main" style="display:none">
+    <div class="metrics" id="metrics"></div>
+
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('carpetas',this)">Mis carpetas</button>
+      <button class="tab" onclick="switchTab('confronte',this)">Pre-firma 📋</button>
+      <button class="tab" onclick="switchTab('referencistas',this)">Referencistas</button>
+      <button class="tab" onclick="switchTab('comerciales',this)">Por comercial</button>
+    </div>
+
+    <div class="filters" id="filtros">
+      <select id="f-board" onchange="render()">
+        <option value="">Todos los tableros</option>
+        <option>LENDAR</option><option>REMAX</option><option>PARTICULARES</option>
+      </select>
+      <select id="f-estado" onchange="render()">
+        <option value="">Todos los estados</option>
+        <option value="urgente">🔴 Urgente</option>
+        <option value="ok">🟢 Ok para firmar</option>
+        <option value="falta">🟡 Falta algo</option>
+      </select>
+      <input type="text" id="f-buscar" placeholder="Buscar carpeta..." oninput="render()"/>
+    </div>
+
+    <div id="vista-carpetas" class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:20%">Carpeta</th>
+          <th style="width:7%">Tablero</th>
+          <th style="width:7%">Lista</th>
+          <th style="width:9%">Fecha firma</th>
+          <th style="width:9%">Vto. Cert.</th>
+          <th style="width:12%">Referencista / ET</th>
+          <th style="width:8%">Certificados</th>
+          <th style="width:8%">Borrador</th>
+          <th style="width:6%">Ver</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="vista-confronte" style="display:none"></div>
+    <div id="vista-referencistas" style="display:none"></div>
+    <div id="vista-comerciales" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const ME='rocioperezvalenzuela';
+const BOARDS=['LENDAR','REMAX','PARTICULARES'];
+const REFERENCISTAS=['Cyntia','Pilar','Magali','Darío','Dario','Maria Laura','Natalia','Hernán','Hernan'];
+const hoy=new Date(); hoy.setHours(0,0,0,0);
+let allCards=[],tabActual='carpetas';
+
+function getKey(){return localStorage.getItem('trello_key')||'';}
+function getToken(){return localStorage.getItem('trello_token')||'';}
+function checkCredenciales(){if(!getKey()||!getToken()){mostrarConfig();return false;}return true;}
+function mostrarConfig(){document.getElementById('cfg-key').value=getKey();document.getElementById('cfg-token').value=getToken();document.getElementById('config-screen').style.display='flex';}
+function guardarCredenciales(){
+  const k=document.getElementById('cfg-key').value.trim(),t=document.getElementById('cfg-token').value.trim();
+  if(!k||!t){document.getElementById('cfg-error').textContent='Completá ambos campos.';return;}
+  localStorage.setItem('trello_key',k);localStorage.setItem('trello_token',t);
+  document.getElementById('config-screen').style.display='none';init();
+}
+async function trello(path){
+  const sep=path.includes('?')?'&':'?';
+  const r=await fetch('https://api.trello.com/1'+path+sep+'key='+getKey()+'&token='+getToken());
+  if(!r.ok)throw new Error('Trello '+r.status);return r.json();
+}
+
+function colorBarra(p){return p>=75?'#1baf7a':p>=45?'#d97706':'#dc2626';}
+
+// ── DETECCIÓN ET desde checklist ──
+function parsearET(cls){
+  for(const cl of cls){
+    for(const ci of cl.checkItems){
+      const t=ci.name;
+      const tl=t.toLowerCase();
+      if(!tl.includes('estudio de t'))continue;
+
+      // Detectar referencista — después de "solicitado a", "sol a", "pedido a"
+      let ref=null;
+      const mRef=t.match(/(?:solicitado?\s+a|sol\.?\s+a|pedido\s+a)\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-Z\s]+?)(?:\s+\d|\s*-|\s*$)/i);
+      if(mRef){
+        const nombre=mRef[1].trim();
+        // Verificar que sea un referencista conocido
+        const found=REFERENCISTAS.find(r=>nombre.toLowerCase().includes(r.toLowerCase()));
+        if(found)ref=found;
+        else ref=nombre.split(' ')[0]; // tomar primer nombre
+      }
+      if(!ref){
+        // Fallback: buscar nombre de referencista conocido en el texto
+        for(const r of REFERENCISTAS){
+          if(tl.includes(r.toLowerCase())){ref=r;break;}
+        }
+      }
+
+      // Detectar fecha de vencimiento
+      let vto=null;
+      const mVto=t.match(/(?:vencimiento|vto\.?|vence|-)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*$/i);
+      if(mVto){
+        const[d,mo,y]=mVto[1].split('/');
+        const yr=y?(y.length===2?2000+parseInt(y):parseInt(y)):new Date().getFullYear();
+        vto=new Date(yr,parseInt(mo)-1,parseInt(d));vto.setHours(0,0,0,0);
+      }
+
+      return{ref,vto,presentado:ci.state==='complete',texto:t};
+    }
+  }
+  return null;
+}
+
+function extractFechaFirma(cls){
+  for(const cl of cls)for(const ci of cl.checkItems){
+    const t=ci.name.toLowerCase();
+    if(t.includes('fecha de firma')||t.includes('fecha firma')){
+      const m=ci.name.match(/(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/);
+      if(m){const[d,mo,y]=m[1].split('/');const yr=y?(y.length===2?2000+parseInt(y):parseInt(y)):new Date().getFullYear();const dt=new Date(yr,parseInt(mo)-1,parseInt(d));dt.setHours(0,0,0,0);return dt;}
+    }
+  }return null;
+}
+
+function detectarCertificados(atts){return atts.some(a=>{const n=a.name||a.fileName||'';return n.startsWith('98_')||/^E\d+/i.test(n);});}
+function detectarBorrador(atts){return atts.some(a=>{const n=(a.name||a.fileName||'').toLowerCase();return n.includes('borrador')||n.includes('draft')||n.endsWith('.docx')||n.endsWith('.doc');});}
+
+function diasHabilesHasta(f){
+  if(!f)return null;let count=0,cur=new Date(hoy);
+  const fin=new Date(f);fin.setHours(0,0,0,0);if(fin<=cur)return 0;
+  while(cur<fin){cur.setDate(cur.getDate()+1);const d=cur.getDay();if(d!==0&&d!==6)count++;}return count;
+}
+
+function estadoGeneral(c){
+  // Para pre-firma: lo que importa es cert + borrador
+  if(!c.certOk&&!c.borrOk) return 'falta';
+  if(!c.certOk||!c.borrOk) return 'falta';
+  return 'ok';
+}
+
+function alertaFirma(c){
+  if(!c.fechaFirma)return false;
+  const dias=Math.round((c.fechaFirma-hoy)/86400000);
+  return dias>=0&&dias<=10&&estadoGeneral(c)!=='ok';
+}
+
+async function init(){
+  if(!checkCredenciales())return;
+  document.getElementById('loading').style.display='block';
+  document.getElementById('main').style.display='none';
+  document.getElementById('loading').textContent='Conectando con Trello...';
+  try{
+    const boards=await trello('/members/me/boards?fields=name,id');
+    const targets=boards.filter(b=>BOARDS.some(n=>b.name.toUpperCase().includes(n)));
+    let cards=[];
+    for(const board of targets){
+      document.getElementById('loading').textContent='Cargando '+board.name+'...';
+      const[bcards,blists]=await Promise.all([
+        trello('/boards/'+board.id+'/cards?fields=name,idList,idMembers,labels,due,dateLastActivity,shortUrl&members=true&checklists=all&attachments=true&limit=1000'),
+        trello('/boards/'+board.id+'/lists?fields=name,id'),
+      ]);
+      const lmap={};blists.forEach(l=>lmap[l.id]=l.name);
+      const bn=board.name.toUpperCase().includes('LENDAR')?'LENDAR':board.name.toUpperCase().includes('REMAX')?'REMAX':'PARTICULARES';
+      for(const card of bcards){
+        const members=(card.members||[]).map(m=>m.username);
+        if(!members.includes(ME))continue;
+        const cls=card.checklists||[];const atts=card.attachments||[];
+        const labels=(card.labels||[]).map(l=>l.name||'').filter(Boolean);
+        const labelsUp=labels.map(l=>l.toUpperCase());
+        const esCABA=labelsUp.some(l=>l.includes('CABA'));
+        const esProvincia=labelsUp.some(l=>l.includes('PROVINCIA')||l.includes('PBA'));
+
+        // Avance checklist escriturario
+        const clEsc=cls.find(cl=>{const n=cl.name.toUpperCase();if(esProvincia)return n.includes('PBA')&&n.includes('ESCRITURARIO');if(esCABA)return n.includes('CABA')&&n.includes('ESCRITURARIO');return n.includes('ESCRITURARIO');});
+        let total=0,done=0;if(clEsc)clEsc.checkItems.forEach(ci=>{total++;if(ci.state==='complete')done++;});
+        const pct=total>0?Math.round(done/total*100):0;
+
+        const et=parsearET(cls);
+        const fechaFirma=extractFechaFirma(cls);
+        const certOk=detectarCertificados(atts);
+        const borrOk=detectarBorrador(atts);
+
+        // Adjuntos de firma (cert + borrador) con fecha
+        const adjsFirma=atts.filter(a=>{
+          const n=a.name||a.fileName||'';
+          return n.startsWith('98_')||/^E\d+/i.test(n)||
+            (()=>{const nl=n.toLowerCase();return nl.includes('borrador')||nl.includes('draft')||nl.endsWith('.docx')||nl.endsWith('.doc');})();
+        });
+
+        cards.push({
+          id:card.id,nombre:card.name,board:bn,lista:lmap[card.idList]||'—',
+          labels,due:card.due,lastActivity:card.dateLastActivity,
+          fechaFirma,et,certOk,borrOk,esCABA,esProvincia,pct,
+          url:'https://trello.com/c/'+card.id,
+          attachments:atts,adjsFirma
+        });
+      }
+    }
+    allCards=cards;
+    document.getElementById('loading').style.display='none';
+    document.getElementById('main').style.display='block';
+    document.getElementById('ultima-act').textContent='Actualizado '+new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    render();
+  }catch(e){
+    document.getElementById('loading').textContent='Error: '+e.message;
+    if(e.message.includes('401'))mostrarConfig();
+  }
+}
+
+function switchTab(t,btn){
+  tabActual=t;
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  document.getElementById('vista-carpetas').style.display=t==='carpetas'?'block':'none';
+  document.getElementById('vista-confronte').style.display=t==='confronte'?'block':'none';
+  document.getElementById('vista-referencistas').style.display=t==='referencistas'?'block':'none';
+  document.getElementById('vista-comerciales').style.display=t==='comerciales'?'block':'none';
+  document.getElementById('filtros').style.display=t==='carpetas'?'flex':'none';
+  render();
+}
+
+function filtrar(){
+  const board=document.getElementById('f-board').value;
+  const estado=document.getElementById('f-estado').value;
+  const busq=document.getElementById('f-buscar').value.toLowerCase();
+  return allCards.filter(c=>{
+    if(board&&c.board!==board)return false;
+    if(busq&&!c.nombre.toLowerCase().includes(busq))return false;
+    if(estado==='urgente'&&!alertaFirma(c))return false;
+    if(estado==='ok'&&estadoGeneral(c)!=='ok')return false;
+    if(estado==='falta'&&estadoGeneral(c)==='ok')return false;
+    return true;
+  });
+}
+
+function render(){
+  const all=filtrar();
+  renderMetrics(all);
+  renderAlertBanner(all);
+  if(tabActual==='carpetas')renderTabla(all);
+  else if(tabActual==='confronte')renderConfronte(all);
+  else if(tabActual==='referencistas')renderReferencistas(all);
+  else if(tabActual==='comerciales')renderComerciales(all);
+}
+
+function renderMetrics(data){
+  const total=data.length;
+  const urgentes=data.filter(c=>alertaFirma(c)).length;
+  const proximas=data.filter(c=>c.fechaFirma&&Math.round((c.fechaFirma-hoy)/86400000)<=10&&Math.round((c.fechaFirma-hoy)/86400000)>=0).length;
+  const sinCert=data.filter(c=>!c.certOk).length;
+  const sinBorr=data.filter(c=>!c.borrOk).length;
+  document.getElementById('metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Mis carpetas</div><div class="metric-val">${total}</div></div>
+    <div class="metric"><div class="metric-label">Urgentes (firma ≤10d)</div><div class="metric-val red">${urgentes}</div></div>
+    <div class="metric"><div class="metric-label">Próximas a firmar</div><div class="metric-val amber">${proximas}</div></div>
+    <div class="metric"><div class="metric-label">Sin certificados</div><div class="metric-val ${sinCert>0?'red':''}">${sinCert}</div></div>
+    <div class="metric"><div class="metric-label">Sin borrador</div><div class="metric-val ${sinBorr>0?'amber':''}">${sinBorr}</div></div>`;
+}
+
+function renderAlertBanner(data){
+  const criticas=data.filter(c=>alertaFirma(c));
+  const banner=document.getElementById('alertBanner');
+  if(!criticas.length){banner.classList.remove('visible');return;}
+  banner.classList.add('visible');
+  document.getElementById('alertList').innerHTML=criticas.map(c=>{
+    const dias=Math.round((c.fechaFirma-hoy)/86400000);
+    const falta=[];
+    if(!c.certOk)falta.push('sin certificados');
+    if(!c.borrOk)falta.push('sin borrador');
+    return `<div><strong>${c.nombre}</strong> — firma en ${dias} día${dias!==1?'s':''} · ${falta.join(' · ')}</div>`;
+  }).join('');
+}
+
+function renderTabla(data){
+  const tbody=document.getElementById('tbody');
+  if(!data.length){tbody.innerHTML='<tr><td colspan="11" class="empty">Sin resultados</td></tr>';return;}
+  // Ordenar: con fecha firma primero
+  const sorted=[...data].sort((a,b)=>{
+    if(a.fechaFirma&&b.fechaFirma)return a.fechaFirma-b.fechaFirma;
+    if(a.fechaFirma)return -1;if(b.fechaFirma)return 1;return 0;
+  });
+  tbody.innerHTML=sorted.map(c=>{
+    const est=estadoGeneral(c);
+    const dotColor=alertaFirma(c)?'#dc2626':est==='ok'?'#1baf7a':'#d97706';
+
+    // Fecha firma
+    let firmaStr='—',firmaCls='firma-none';
+    if(c.fechaFirma){const dias=Math.round((c.fechaFirma-hoy)/86400000);firmaStr=c.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})+(dias===0?' (HOY)':dias===1?' (mañana)':dias>0?` (${dias}d)`:'');firmaCls=dias<0?'firma-vencida':dias<=7?'firma-prox':'firma-ok';}
+
+    // Vto cert
+    let vtoStr='—',vtoColor='var(--text2)';
+    if(c.due){const d=new Date(c.due);d.setHours(0,0,0,0);const dias=Math.round((d-hoy)/86400000);vtoStr=d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});vtoColor=dias<0?'#dc2626':dias<=7?'#d97706':'var(--text2)';}
+
+    // ET / Referencista
+    let etCell='<span class="pill pill-gray">Sin datos</span>';
+    if(c.et){
+      const{ref,vto,presentado}=c.et;
+      if(presentado){
+        etCell=`<span class="pill pill-ok">✓ Presentado</span>${ref?`<br><span style="font-size:10px;color:var(--text2)">${ref}</span>`:''}`;
+      } else if(vto){
+        const dh=diasHabilesHasta(vto);
+        const vtoStr2=vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+        const color=dh<=0?'pill-err':dh<=2?'pill-warn':'pill-gray';
+        const label=dh<=0?'VENCIDO':`vence ${vtoStr2}`;
+        etCell=`${ref?`<span class="pill pill-ref">${ref}</span><br>`:''}    <span class="pill ${color}">${label}</span>`;
+      } else {
+        etCell=`${ref?`<span class="pill pill-ref">${ref}</span><br>`:''}    <span class="pill pill-warn">Pendiente</span>`;
+      }
+    }
+
+    // Cert y borrador
+    const certCell=c.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>';
+    const borrCell=c.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>';
+
+    const actStr=c.lastActivity?new Date(c.lastActivity).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):'—';
+
+    return `<tr>
+      <td><span class="dot" style="background:${dotColor}"></span><a href="${c.url}" target="_blank" style="color:var(--text);text-decoration:none;font-weight:500">${c.nombre}</a></td>
+      <td><span class="pill pill-board">${c.board}</span></td>
+      <td style="font-size:11px;color:var(--text2)">${c.lista}</td>
+      <td><span class="${firmaCls}" style="font-size:11px">${firmaStr}</span></td>
+      <td style="font-size:11px;color:${vtoColor}">${vtoStr}</td>
+      <td>${etCell}</td>
+      <td>${certCell}</td>
+      <td>${borrCell}</td>
+      <td><button class="ver-btn" onclick="abrirPanel('${c.id}')">Ver</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── VISTA PRE-FIRMA (Confronte) ──
+function renderConfronte(data){
+  const el=document.getElementById('vista-confronte');
+  // Solo carpetas con fecha de firma en los próximos 15 días o vencidas recientemente
+  const proximas=data.filter(c=>c.fechaFirma).sort((a,b)=>a.fechaFirma-b.fechaFirma);
+  if(!proximas.length){el.innerHTML='<div class="empty">No hay carpetas con fecha de firma cargada.</div>';return;}
+
+  const semanas={};
+  for(const c of proximas){
+    const dias=Math.round((c.fechaFirma-hoy)/86400000);
+    const key=dias<0?'⚠ Vencidas':dias<=7?'Esta semana (0–7 días)':'Próxima semana (8–15 días)';
+    if(!semanas[key])semanas[key]=[];
+    if(dias<=15)semanas[key].push(c);
+  }
+
+  el.innerHTML=Object.entries(semanas).map(([titulo,carpetas])=>`
+    <div class="confronte-card">
+      <div class="confronte-title">${titulo} <span style="font-size:11px;color:var(--text2);font-weight:400">${carpetas.length} carpeta${carpetas.length!==1?'s':''}</span></div>
+      ${carpetas.map(c=>{
+        const dias=Math.round((c.fechaFirma-hoy)/86400000);
+        const firmaStr=c.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+        const etInfo=c.et?.presentado?'<span class="check-box check-ok">✓ ET</span>':c.et?'<span class="check-box check-no">✗ ET</span>':'<span class="check-box" style="background:#F1F5F9;color:#64748B">ET?</span>';
+        const certInfo=c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>';
+        const borrInfo=c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>';
+        const listo=c.certOk&&c.borrOk&&c.et?.presentado;
+        return `<div class="confronte-row">
+          <div>
+            <div class="confronte-nombre"><a href="${c.url}" target="_blank" style="color:var(--text);text-decoration:none">${c.nombre}</a></div>
+            <div style="font-size:10px;color:var(--text2)">${c.board} · ${c.lista} · firma ${firmaStr}${dias===0?' (HOY)':dias===1?' (mañana)':''}</div>
+          </div>
+          <div class="confronte-checks">
+            ${etInfo}${certInfo}${borrInfo}
+            ${listo?'<span class="check-box check-ok">✓ Lista</span>':''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+
+  if(!el.innerHTML.trim())el.innerHTML='<div class="empty">No hay carpetas con firma en los próximos 15 días.</div>';
+}
+
+// ── VISTA REFERENCISTAS ──
+function renderReferencistas(data){
+  const el=document.getElementById('vista-referencistas');
+  // Agrupar por referencista
+  const grupos={};
+  for(const c of data){
+    if(!c.et||!c.et.ref)continue;
+    const ref=c.et.ref;
+    if(!grupos[ref])grupos[ref]={presentados:[],pendientes:[],vencidos:[]};
+    if(c.et.presentado)grupos[ref].presentados.push(c);
+    else if(c.et.vto&&diasHabilesHasta(c.et.vto)<=0)grupos[ref].vencidos.push(c);
+    else grupos[ref].pendientes.push(c);
+  }
+  const sinRef=data.filter(c=>!c.et||!c.et.ref);
+
+  if(!Object.keys(grupos).length){el.innerHTML='<div class="empty">No se detectaron referencistas asignados en los checklists.</div>';return;}
+
+  el.innerHTML=`<div class="ref-grid">${Object.entries(grupos).map(([ref,g])=>`
+    <div class="ref-card">
+      <div class="ref-card-title">
+        <span>${ref}</span>
+        <div style="display:flex;gap:5px">
+          <span class="pill pill-ok">${g.presentados.length} ✓</span>
+          ${g.vencidos.length?`<span class="pill pill-err">${g.vencidos.length} venc.</span>`:''}
+          ${g.pendientes.length?`<span class="pill pill-warn">${g.pendientes.length} pend.</span>`:''}
+        </div>
+      </div>
+      ${g.vencidos.map(c=>`<div class="ref-item"><div><div class="ref-item-nombre">${c.nombre}</div><div class="ref-item-meta" style="color:#dc2626">VENCIDO</div></div><span class="pill pill-err">Vencido</span></div>`).join('')}
+      ${g.pendientes.map(c=>{
+        const vtoStr=c.et.vto?c.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):'s/f';
+        return`<div class="ref-item"><div><div class="ref-item-nombre">${c.nombre}</div><div class="ref-item-meta">vto ${vtoStr}</div></div><span class="pill pill-warn">Pendiente</span></div>`;
+      }).join('')}
+      ${g.presentados.slice(0,3).map(c=>`<div class="ref-item"><div class="ref-item-nombre" style="color:var(--text2)">${c.nombre}</div><span class="pill pill-ok">✓</span></div>`).join('')}
+      ${g.presentados.length>3?`<div style="font-size:10px;color:var(--text2);padding-top:4px">+${g.presentados.length-3} más presentados</div>`:''}
+    </div>`).join('')}</div>
+    ${sinRef.length?`<div style="margin-top:12px;font-size:12px;color:var(--text2)">${sinRef.length} carpeta${sinRef.length!==1?'s':''} sin referencista detectado en el checklist.</div>`:''}`;
+}
+
+// ── VISTA POR COMERCIAL ──
+function detectarComercial(lista){
+  if(!lista||lista==='—') return 'Sin asignar';
+  const n=lista.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  if(n.includes('AYLU')||n.includes('AYLEN')) return 'Aylu';
+  if(n.includes('IVANA')) return 'Ivana';
+  if(n.includes('MARTIN')) return 'Martín';
+  if(n.includes('MAXI')) return 'Maxi';
+  if(n.includes('ORNELLA')) return 'Ornella';
+  if(n.includes('ROMULO')) return 'Rómulo';
+  if(n.includes('PABLO')) return 'Pablo J.';
+  if(n.includes('CAMILA')) return 'Camila';
+  return lista;
+}
+
+function renderComerciales(data){
+  const el=document.getElementById('vista-comerciales');
+  const grupos={};
+  for(const c of data){
+    const com=detectarComercial(c.lista);
+    if(!grupos[com])grupos[com]=[];
+    grupos[com].push(c);
+  }
+  if(!Object.keys(grupos).length){el.innerHTML='<div class="empty">Sin carpetas.</div>';return;}
+
+  el.innerHTML=Object.entries(grupos).sort((a,b)=>b[1].length-a[1].length).map(([com,carpetas])=>{
+    const urgentes=carpetas.filter(c=>alertaFirma(c)).length;
+    const sinCert=carpetas.filter(c=>!c.certOk).length;
+    const sinBorr=carpetas.filter(c=>!c.borrOk).length;
+    return `<div class="confronte-card" style="margin-bottom:12px">
+      <div class="confronte-title">
+        <span>${com} <span style="font-size:11px;font-weight:400;color:var(--text2)">${carpetas.length} carpeta${carpetas.length!==1?'s':''}</span></span>
+        <div style="display:flex;gap:5px">
+          ${urgentes?`<span class="pill pill-err">🔴 ${urgentes} urgente${urgentes!==1?'s':''}</span>`:''}
+          ${sinCert?`<span class="pill pill-warn">sin cert: ${sinCert}</span>`:''}
+          ${sinBorr?`<span class="pill pill-gray">sin borr: ${sinBorr}</span>`:''}
+          ${!urgentes&&!sinCert&&!sinBorr?'<span class="pill pill-ok">✓ Ok</span>':''}
+        </div>
+      </div>
+      ${carpetas.sort((a,b)=>{
+        if(a.fechaFirma&&b.fechaFirma)return a.fechaFirma-b.fechaFirma;
+        if(a.fechaFirma)return -1;if(b.fechaFirma)return 1;return 0;
+      }).map(c=>{
+        const dias=c.fechaFirma?Math.round((c.fechaFirma-hoy)/86400000):null;
+        const firmaStr=c.fechaFirma?c.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'sin fecha';
+        const urgente=alertaFirma(c);
+        const certInfo=c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>';
+        const borrInfo=c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>';
+        const etInfo=c.et?.presentado?'<span class="check-box check-ok">✓ ET</span>':c.et?'<span class="check-box check-no">✗ ET</span>':'';
+        return `<div class="confronte-row">
+          <div>
+            <div class="confronte-nombre"><a href="${c.url}" target="_blank" style="color:${urgente?'#dc2626':'var(--text)'};text-decoration:none">${c.nombre}</a></div>
+            <div style="font-size:10px;color:var(--text2)">${c.board}${dias!==null?' · firma '+firmaStr+(dias===0?' (HOY)':dias===1?' (mañana)':dias>0?` (${dias}d)`:' (VENCIDA)'):''}</div>
+          </div>
+          <div class="confronte-checks">${etInfo}${certInfo}${borrInfo}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ── PANEL LATERAL ──
+async function abrirPanel(cardId){
+  const card=allCards.find(c=>c.id===cardId);if(!card)return;
+  document.getElementById('panelNombre').textContent=card.nombre;
+  document.getElementById('panelMeta').textContent=card.board+' · '+card.lista;
+  document.getElementById('panelBody').innerHTML='<div class="loading">Cargando...</div>';
+  document.getElementById('panelOverlay').classList.add('open');
+  document.getElementById('panel').classList.add('open');
+  try{
+    const firmaStr=card.fechaFirma?card.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
+    const etInfo=card.et?`${card.et.ref||'—'} · ${card.et.presentado?'✓ Presentado':card.et.vto?'Vto '+card.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'Pendiente'}`:'Sin datos';
+
+    const adjsHtml=card.adjsFirma.length
+      ?card.adjsFirma.map(a=>{const n=a.name||a.fileName||'Archivo';const fecha=a.date?new Date(a.date).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):'';const icon=n.toLowerCase().endsWith('.pdf')?'📄':'📎';return`<div class="adj-item"><span>${icon}</span><span class="adj-name">${n}</span><span class="adj-date">${fecha}</span></div>`;}).join('')
+      :'<div style="font-size:12px;color:#aaa;font-style:italic">Sin adjuntos de firma subidos</div>';
+
+    document.getElementById('panelBody').innerHTML=`
+      <div class="panel-section">
+        <div class="panel-section-title">Estado pre-firma</div>
+        <div class="panel-row"><span class="panel-row-label">Fecha de firma</span><span style="font-size:12px;font-weight:500">${firmaStr}</span></div>
+        <div class="panel-row"><span class="panel-row-label">Estudio de títulos</span>${card.et?.presentado?'<span class="pill pill-ok">✓ Presentado</span>':'<span class="pill pill-err">Pendiente</span>'}</div>
+        <div class="panel-row"><span class="panel-row-label">Referencista</span><span style="font-size:12px">${card.et?.ref||'—'}</span></div>
+        <div class="panel-row"><span class="panel-row-label">Vto. ET</span><span style="font-size:12px">${card.et?.vto?card.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—'}</span></div>
+        <div class="panel-row"><span class="panel-row-label">Certificados</span>${card.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>'}</div>
+        <div class="panel-row"><span class="panel-row-label">Borrador</span>${card.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>'}</div>
+        <div class="panel-row"><span class="panel-row-label">Avance checklist</span><span style="font-size:12px;font-weight:500">${card.pct}%</span></div>
+        <div class="panel-row"><span class="panel-row-label">Jurisdicción</span><span style="font-size:12px">${card.esCABA?'CABA':card.esProvincia?'Provincia':'—'}</span></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title">Adjuntos de firma (${card.adjsFirma.length})</div>
+        ${adjsHtml}
+      </div>
+      <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border)">
+        <a href="${card.url}" target="_blank" style="font-size:12px;color:var(--blue)">Ver carpeta en Trello →</a>
+      </div>`;
+  }catch(e){document.getElementById('panelBody').innerHTML=`<div style="color:#dc2626;font-size:12px">Error: ${e.message}</div>`;}
+}
+function cerrarPanel(){document.getElementById('panelOverlay').classList.remove('open');document.getElementById('panel').classList.remove('open');}
+
+if(!checkCredenciales()){}else{init();}
+</script>
+</body>
+</html>
