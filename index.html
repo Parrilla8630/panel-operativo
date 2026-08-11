@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel Operativo RPV</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--navy:#1A2E4A;--blue:#2a78d6;--green:#1baf7a;--amber:#d97706;--red:#dc2626;--bg:#F0F4F8;--surface:#fff;--border:#E2E8F0;--text:#1A2E4A;--text2:#64748B}
@@ -137,6 +138,7 @@ tr:hover td{background:#F8FAFC}
     </div>
   </div>
   <div class="header-right">
+    <button class="btn-sm" id="btn-google" onclick="conectarGoogle()">📅 Conectar Google</button>
     <button class="btn-sm" onclick="init()">↺ Actualizar</button>
     <button class="btn-sm" onclick="mostrarConfig()">⚙ Config</button>
   </div>
@@ -171,6 +173,7 @@ tr:hover td{background:#F8FAFC}
       <button class="tab" onclick="switchTab('referencistas',this)">Referencistas</button>
       <button class="tab" onclick="switchTab('comerciales',this)">Por comercial</button>
       <button class="tab" onclick="switchTab('aj',this)">Revisión AJ <span id="aj-badge" style="display:none"></span></button>
+      <button class="tab" onclick="switchTab('calendario',this)">Calendario 📅</button>
     </div>
 
     <div class="filters" id="aj-config" style="display:none">
@@ -214,6 +217,7 @@ tr:hover td{background:#F8FAFC}
     <div id="vista-referencistas" style="display:none"></div>
     <div id="vista-comerciales" style="display:none"></div>
     <div id="vista-aj" style="display:none"></div>
+    <div id="vista-calendario" style="display:none"></div>
   </div>
 </div>
 
@@ -400,9 +404,11 @@ function switchTab(t,btn){
   document.getElementById('vista-referencistas').style.display=t==='referencistas'?'block':'none';
   document.getElementById('vista-comerciales').style.display=t==='comerciales'?'block':'none';
   document.getElementById('vista-aj').style.display=t==='aj'?'block':'none';
+  document.getElementById('vista-calendario').style.display=t==='calendario'?'block':'none';
   document.getElementById('filtros').style.display=t==='carpetas'?'flex':'none';
   document.getElementById('aj-config').style.display=t==='aj'?'flex':'none';
   render();
+  if(t==='calendario')renderCalendario();
 }
 
 function filtrar(){
@@ -812,6 +818,114 @@ function renderAJ(data){
       ${sinNovedad?'<div style="font-size:12px;color:var(--text2)">Sin novedades ni pendientes activos.</div>':''}
     </div>`;
   }).join('');
+}
+
+// ── GOOGLE CALENDAR ──
+const GOOGLE_CLIENT_ID='83079202700-e6o9hfa2lgj07qlu4k85m9m4epaagm8n.apps.googleusercontent.com';
+const GOOGLE_SCOPE='https://www.googleapis.com/auth/calendar.readonly';
+const CALENDARIOS_A_REVISAR=['pablo@caballeroescribanos.com','contacto@caballeroescribanos.com'];
+let googleToken=null,googleTokenClient=null,eventosGoogle=[];
+
+function initGoogleClient(){
+  if(!window.google||!google.accounts)return; // la librería puede tardar en cargar
+  googleTokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:GOOGLE_CLIENT_ID,
+    scope:GOOGLE_SCOPE,
+    callback:(resp)=>{
+      if(resp.error){alert('Error de Google: '+resp.error);return;}
+      googleToken=resp.access_token;
+      document.getElementById('btn-google').textContent='📅 Google conectado ✓';
+      cargarEventosGoogle();
+    }
+  });
+}
+window.addEventListener('load',()=>setTimeout(initGoogleClient,300));
+
+function conectarGoogle(){
+  if(!googleTokenClient){alert('Todavía está cargando la conexión con Google, esperá un segundo y volvé a tocar.');initGoogleClient();return;}
+  googleTokenClient.requestAccessToken({prompt: googleToken?'':'consent'});
+}
+
+async function cargarEventosGoogle(){
+  if(!googleToken)return;
+  const ahora=new Date();
+  const timeMin=new Date(ahora.getTime()-2*86400000).toISOString(); // desde hace 2 días
+  const timeMax=new Date(ahora.getTime()+35*86400000).toISOString(); // hasta 35 días adelante
+  let todos=[];
+  for(const cal of CALENDARIOS_A_REVISAR){
+    try{
+      const url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(cal)+'/events?timeMin='+encodeURIComponent(timeMin)+'&timeMax='+encodeURIComponent(timeMax)+'&singleEvents=true&orderBy=startTime&maxResults=250';
+      const r=await fetch(url,{headers:{Authorization:'Bearer '+googleToken}});
+      if(!r.ok){console.warn('Error calendario',cal,r.status);continue;}
+      const data=await r.json();
+      (data.items||[]).forEach(ev=>{
+        if(!ev.summary)return;
+        todos.push({calendario:cal,resumen:ev.summary,fecha:ev.start?.dateTime||ev.start?.date,htmlLink:ev.htmlLink});
+      });
+    }catch(e){console.warn('Error cargando',cal,e);}
+  }
+  eventosGoogle=todos;
+  if(tabActual==='calendario')renderCalendario();
+}
+
+const STOP_TOKENS=new Set(['LENDAR','REMAX','PARTICULARES','PARTICULAR','FIRMA','SALA','FELLINI','SPIELBERG','VENTA','HIPOTECA','CONSTITUCION','COMPRAVENTA','FINCA','CABA','PBA','ALLARIA','FSC','CASELLA','CATALINA','MARIO','CONF','ACONF','FUERA','OFICINA','REVISION','CARPETAS','SEMANAL','DE','LA','EL','Y','OTRO','OTRA','OTROS','A','MUNOZ','UF','FCI','CERRADO','CREDITOS']);
+
+function tokensRelevantes(texto){
+  const n=(texto||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  return n.split(/[^A-Z]+/).filter(t=>t.length>=4&&!STOP_TOKENS.has(t));
+}
+
+function buscarMatchCalendario(card){
+  const tokensCard=tokensRelevantes(card.nombre);
+  let mejor=null,mejorScore=0;
+  for(const ev of eventosGoogle){
+    const tokensEv=tokensRelevantes(ev.resumen);
+    const score=tokensCard.filter(t=>tokensEv.includes(t)).length;
+    if(score>mejorScore){mejorScore=score;mejor=ev;}
+  }
+  return mejorScore>0?{evento:mejor,score:mejorScore}:null;
+}
+
+function renderCalendario(){
+  const el=document.getElementById('vista-calendario');
+  if(!googleToken){
+    el.innerHTML=`<div class="empty">
+      Conectá tu cuenta de Google (botón "📅 Conectar Google" arriba) para cruzar las agendas de Pablo y de la escribanía contra tus carpetas de Trello.
+    </div>`;
+    return;
+  }
+  if(!eventosGoogle.length){el.innerHTML='<div class="loading">Cargando eventos del calendario…</div>';return;}
+
+  const sinFecha=allCards.filter(c=>!c.fechaFirma);
+  if(!sinFecha.length){el.innerHTML='<div class="empty">Todas tus carpetas ya tienen fecha de firma cargada en Trello. Nada para cruzar.</div>';return;}
+
+  const conMatch=[],sinMatch=[];
+  sinFecha.forEach(c=>{
+    const m=buscarMatchCalendario(c);
+    if(m)conMatch.push({card:c,...m});else sinMatch.push(c);
+  });
+  conMatch.sort((a,b)=>b.score-a.score);
+
+  el.innerHTML=`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Comparando ${sinFecha.length} carpeta${sinFecha.length!==1?'s':''} sin fecha de firma en Trello contra ${eventosGoogle.length} eventos de Pablo y la escribanía (próximos 35 días).</div>
+    ${conMatch.length?`<div class="confronte-card">
+      <div class="confronte-title">Posibles coincidencias — revisar y cargar en Trello</div>
+      ${conMatch.map(({card,evento})=>{
+        const f=evento.fecha?new Date(evento.fecha):null;
+        const fStr=f?f.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
+        return `<div class="confronte-row">
+          <div>
+            <div class="confronte-nombre"><a href="${card.url}" target="_blank" style="color:var(--text);text-decoration:none">${card.nombre}</a></div>
+            <div style="font-size:10px;color:var(--text2)">Evento: "${evento.resumen}" · ${evento.calendario.split('@')[0]} · <a href="${evento.htmlLink}" target="_blank">ver en calendar</a></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="pill pill-warn">Fecha de firma: ${fStr}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`:'<div class="empty" style="margin-bottom:12px">No se encontraron coincidencias por apellido en el calendario para las carpetas sin fecha.</div>'}
+    ${sinMatch.length?`<div style="font-size:11px;color:var(--text2);margin-top:10px">${sinMatch.length} carpeta${sinMatch.length!==1?'s':''} sin fecha y sin ningún evento coincidente en el calendario: ${sinMatch.map(c=>c.nombre).join(', ')}</div>`:''}
+  `;
 }
 
 // ── PANEL LATERAL ──
