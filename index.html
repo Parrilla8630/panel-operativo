@@ -293,20 +293,32 @@ function parsearET(cls){
         ref=resolverReferencista(nombre)||nombre.split(' ')[0]; // si no matchea ningún alias, tomar primer nombre tal cual
       }
       if(!ref){
-        // Fallback: buscar algún alias conocido en todo el texto del ítem
+        // Fallback: buscar algún alias conocido en todo el texto del ítem (cubre "sol D/M a NOMBRE", etc.)
         ref=resolverReferencista(t);
       }
 
-      // Detectar fecha de vencimiento
+      // ¿Está bloqueado por sucesión/tracto sin finalizar? En ese caso NO hay vencimiento real todavía
+      // (ya es insensible a mayúsculas/minúsculas por el flag /i; acá además toleramos variantes: sucesion/sucesión/sucesiones/sucesorio, con o sin tilde)
+      const tieneSucesion=/suces|\btract|declarator|hereder|\bsuc\b/i.test(t);
+      const tieneBloqueo=/sin\s*final|no\s*final|\bfalta\b|sin\s*fecha|pendient/i.test(t);
+      const bloqueadoPorSucesion=tieneSucesion&&tieneBloqueo;
+
+      // Detectar fecha de vencimiento en el texto — "para el D/M", "para D/M", "vencimiento D/M", "vto D/M", "vence D/M"
+      // Ya NO exigimos que esté al final del texto (puede haber texto después, ej. "para el 30/6) FALTA SUCESION")
       let vto=null;
-      const mVto=t.match(/(?:vencimiento|vto\.?|vence|-)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*$/i);
-      if(mVto){
-        const[d,mo,y]=mVto[1].split('/');
-        const yr=y?(y.length===2?2000+parseInt(y):parseInt(y)):new Date().getFullYear();
-        vto=new Date(yr,parseInt(mo)-1,parseInt(d));vto.setHours(0,0,0,0);
+      if(!bloqueadoPorSucesion){
+        const mVto=t.match(/(?:vencimiento|vto\.?|vence|para)\s*(?:el\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
+        if(mVto){
+          const[d,mo,y]=mVto[1].split('/');
+          const yr=y?(y.length===2?2000+parseInt(y):parseInt(y)):new Date().getFullYear();
+          vto=new Date(yr,parseInt(mo)-1,parseInt(d));vto.setHours(0,0,0,0);
+        } else if(ci.due){
+          // Algunas (ej. Ornella) no escriben la fecha en el texto — usan el recordatorio nativo de Trello
+          vto=new Date(ci.due);vto.setHours(0,0,0,0);
+        }
       }
 
-      return{ref,vto,presentado:ci.state==='complete',texto:t};
+      return{ref,vto,bloqueadoPorSucesion,presentado:ci.state==='complete',texto:t};
     }
   }
   return null;
@@ -391,7 +403,7 @@ async function init(){
     for(const board of targets){
       document.getElementById('loading').textContent='Cargando '+board.name+'...';
       const[bcards,blists]=await Promise.all([
-        trello('/boards/'+board.id+'/cards?fields=name,idList,idMembers,labels,due,dateLastActivity,shortUrl&members=true&checklists=all&attachments=true&limit=1000'),
+        trello('/boards/'+board.id+'/cards?fields=name,idList,idMembers,labels,due,dateLastActivity,shortUrl&members=true&checklists=all&checkItem_fields=all&attachments=true&limit=1000'),
         trello('/boards/'+board.id+'/lists?fields=name,id'),
       ]);
       const lmap={};blists.forEach(l=>lmap[l.id]=l.name);
@@ -564,7 +576,7 @@ function renderTabla(data){
     // ET / Referencista
     let etCell='<span class="pill pill-gray">Sin datos</span>';
     if(c.et){
-      const{ref,vto,presentado}=c.et;
+      const{ref,vto,presentado,bloqueadoPorSucesion}=c.et;
       if(presentado){
         etCell=`<span class="pill pill-ok">✓ Presentado</span>${ref?`<br><span style="font-size:10px;color:var(--text2)">${ref}</span>`:''}`;
       } else if(vto){
@@ -573,6 +585,8 @@ function renderTabla(data){
         const color=dh<=0?'pill-err':dh<=2?'pill-warn':'pill-gray';
         const label=dh<=0?'VENCIDO':`vence ${vtoStr2}`;
         etCell=`${ref?`<span class="pill pill-ref">${ref}</span><br>`:''}    <span class="pill ${color}">${label}</span>`;
+      } else if(bloqueadoPorSucesion){
+        etCell=`${ref?`<span class="pill pill-ref">${ref}</span><br>`:''}    <span class="pill pill-gray">⏳ Esperando sucesión</span>`;
       } else {
         etCell=`${ref?`<span class="pill pill-ref">${ref}</span><br>`:''}    <span class="pill pill-warn">Pendiente</span>`;
       }
@@ -668,13 +682,13 @@ function renderReferencistas(data){
       </div>
       ${g.vencidos.map(c=>`<div class="ref-item"><div><div class="ref-item-nombre">${c.nombre}</div><div class="ref-item-meta" style="color:#dc2626">VENCIDO</div></div><span class="pill pill-err">Vencido</span></div>`).join('')}
       ${g.pendientes.map(c=>{
-        const vtoStr=c.et.vto?c.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):'s/f';
+        const vtoStr=c.et.vto?c.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):(c.et.bloqueadoPorSucesion?'esperando sucesión':'s/f');
         return`<div class="ref-item"><div><div class="ref-item-nombre">${c.nombre}</div><div class="ref-item-meta">vto ${vtoStr}</div></div><span class="pill pill-warn">Pendiente</span></div>`;
       }).join('')}
       ${g.presentados.slice(0,3).map(c=>`<div class="ref-item"><div class="ref-item-nombre" style="color:var(--text2)">${c.nombre}</div><span class="pill pill-ok">✓</span></div>`).join('')}
       ${g.presentados.length>3?`<div style="font-size:10px;color:var(--text2);padding-top:4px">+${g.presentados.length-3} más presentados</div>`:''}
     </div>`).join('')}</div>
-    ${sinRef.length?`<div style="margin-top:12px;font-size:12px;color:var(--text2)">${sinRef.length} carpeta${sinRef.length!==1?'s':''} sin referencista detectado en el checklist.</div>`:''}`;
+    ${sinRef.length?`<div style="margin-top:12px;font-size:12px;color:var(--text2)">${sinRef.length} carpeta${sinRef.length!==1?'s':''} sin referencista detectado en el checklist: ${sinRef.map(c=>`<a href="${c.url}" target="_blank" style="color:var(--text2)">${c.nombre}</a>`).join(', ')}</div>`:''}`;
 }
 
 // ── VISTA POR COMERCIAL ──
