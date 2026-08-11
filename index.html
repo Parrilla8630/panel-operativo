@@ -348,6 +348,25 @@ function esCertificadoNombre(n){
   const nl=n.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   return n.startsWith('98_')||/^E\d+/i.test(n)||nl.startsWith('dominio')||nl.startsWith('inhibicion');
 }
+// Segunda fuente: el propio comercial tacha estos ítems en su checklist escriturario cuando ya los tiene
+function checklistTachado(cls,regex){
+  for(const cl of cls)for(const ci of cl.checkItems){
+    if(regex.test(ci.name))return ci.state==='complete';
+  }
+  return null; // null = el ítem ni siquiera existe en este checklist
+}
+function certificadosDesdeChecklist(cls){
+  const dominio=checklistTachado(cls,/certificado\s+de\s+dominio/i);
+  const inhibicion=checklistTachado(cls,/certificado\s+de\s+inhibici[oó]n/i);
+  // Si no existen esos ítems en el checklist, no podemos afirmar nada por acá
+  if(dominio===null&&inhibicion===null)return null;
+  return (dominio===true)&&(inhibicion===true);
+}
+function borradorDesdeChecklist(cls){
+  // "Borrador escritura" / "Borrador de escritura" — evitar confundir con "...entregado a las partes" (paso posterior)
+  return checklistTachado(cls,/^borrador\s+(de\s+)?escritura\s*$/i);
+}
+
 function detectarCertificados(atts,nombreCarpeta){
   const apellidos=apellidosDeCarpeta(nombreCarpeta);
   return atts.some(a=>{
@@ -424,8 +443,15 @@ async function init(){
 
         const et=parsearET(cls);
         const fechaFirma=extractFechaFirma(cls);
-        const certOk=detectarCertificados(atts,card.name);
-        const borrOk=detectarBorrador(atts,card.name);
+        const certOkAdjunto=detectarCertificados(atts,card.name);
+        const borrOkAdjunto=detectarBorrador(atts,card.name);
+        const certOkChecklist=certificadosDesdeChecklist(cls);
+        const borrOkChecklist=borradorDesdeChecklist(cls);
+        const certOk=certOkAdjunto||certOkChecklist===true;
+        const borrOk=borrOkAdjunto||borrOkChecklist===true;
+        // Si las dos señales existen y se contradicen, vale la pena que lo veas
+        const certContradice=certOkChecklist!==null&&certOkChecklist!==certOkAdjunto;
+        const borrContradice=borrOkChecklist!==null&&borrOkChecklist!==borrOkAdjunto;
 
         // Adjuntos de firma (cert + borrador) con fecha
         const adjsFirma=atts.filter(a=>{
@@ -445,7 +471,7 @@ async function init(){
         cards.push({
           id:card.id,nombre:card.name,board:bn,lista:lmap[card.idList]||'—',
           labels,due:card.due,lastActivity:card.dateLastActivity,
-          fechaFirma,et,certOk,borrOk,esCABA,esProvincia,pct,
+          fechaFirma,et,certOk,borrOk,certContradice,borrContradice,esCABA,esProvincia,pct,
           url:'https://trello.com/c/'+card.id,
           attachments:atts,adjsFirma
         });
@@ -593,8 +619,8 @@ function renderTabla(data){
     }
 
     // Cert y borrador
-    const certCell=c.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>';
-    const borrCell=c.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>';
+    const certCell=(c.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>')+(c.certContradice?'<span title="El adjunto y el checklist del comercial no coinciden — verificar a mano" style="cursor:help"> ⚠️</span>':'');
+    const borrCell=(c.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>')+(c.borrContradice?'<span title="El adjunto y el checklist del comercial no coinciden — verificar a mano" style="cursor:help"> ⚠️</span>':'');
 
     const actStr=c.lastActivity?new Date(c.lastActivity).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}):'—';
 
@@ -634,8 +660,8 @@ function renderConfronte(data){
         const dias=Math.round((c.fechaFirma-hoy)/86400000);
         const firmaStr=c.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});
         const etInfo=c.et?.presentado?'<span class="check-box check-ok">✓ ET</span>':c.et?'<span class="check-box check-no">✗ ET</span>':'<span class="check-box" style="background:#F1F5F9;color:#64748B">ET?</span>';
-        const certInfo=c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>';
-        const borrInfo=c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>';
+        const certInfo=(c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>')+(c.certContradice?'<span title="El adjunto y el checklist del comercial no coinciden en este ítem — conviene verificar a mano" style="cursor:help">⚠️</span>':'');
+        const borrInfo=(c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>')+(c.borrContradice?'<span title="El adjunto y el checklist del comercial no coinciden en este ítem — conviene verificar a mano" style="cursor:help">⚠️</span>':'');
         const listo=c.certOk&&c.borrOk&&c.et?.presentado;
         return `<div class="confronte-row">
           <div>
@@ -737,8 +763,8 @@ function renderComerciales(data){
         const dias=c.fechaFirma?Math.round((c.fechaFirma-hoy)/86400000):null;
         const firmaStr=c.fechaFirma?c.fechaFirma.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'sin fecha';
         const urgente=alertaFirma(c);
-        const certInfo=c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>';
-        const borrInfo=c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>';
+        const certInfo=(c.certOk?'<span class="check-box check-ok">✓ Cert</span>':'<span class="check-box check-no">✗ Cert</span>')+(c.certContradice?'<span title="El adjunto y el checklist del comercial no coinciden en este ítem — conviene verificar a mano" style="cursor:help">⚠️</span>':'');
+        const borrInfo=(c.borrOk?'<span class="check-box check-ok">✓ Borr</span>':'<span class="check-box check-no">✗ Borr</span>')+(c.borrContradice?'<span title="El adjunto y el checklist del comercial no coinciden en este ítem — conviene verificar a mano" style="cursor:help">⚠️</span>':'');
         const etInfo=c.et?.presentado?'<span class="check-box check-ok">✓ ET</span>':c.et?'<span class="check-box check-no">✗ ET</span>':'';
         return `<div class="confronte-row">
           <div>
@@ -1062,8 +1088,8 @@ async function abrirPanel(cardId){
         <div class="panel-row"><span class="panel-row-label">Estudio de títulos</span>${card.et?.presentado?'<span class="pill pill-ok">✓ Presentado</span>':'<span class="pill pill-err">Pendiente</span>'}</div>
         <div class="panel-row"><span class="panel-row-label">Referencista</span><span style="font-size:12px">${card.et?.ref||'—'}</span></div>
         <div class="panel-row"><span class="panel-row-label">Vto. ET</span><span style="font-size:12px">${card.et?.vto?card.et.vto.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—'}</span></div>
-        <div class="panel-row"><span class="panel-row-label">Certificados</span>${card.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>'}</div>
-        <div class="panel-row"><span class="panel-row-label">Borrador</span>${card.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>'}</div>
+        <div class="panel-row"><span class="panel-row-label">Certificados</span>${card.certOk?'<span class="pill pill-ok">✓ Subidos</span>':'<span class="pill pill-err">Sin subir</span>'}${card.certContradice?' <span title="El adjunto y el checklist del comercial no coinciden">⚠️</span>':''}</div>
+        <div class="panel-row"><span class="panel-row-label">Borrador</span>${card.borrOk?'<span class="pill pill-ok">✓ Subido</span>':'<span class="pill pill-gray">Sin subir</span>'}${card.borrContradice?' <span title="El adjunto y el checklist del comercial no coinciden">⚠️</span>':''}</div>
         <div class="panel-row"><span class="panel-row-label">Avance checklist</span><span style="font-size:12px;font-weight:500">${card.pct}%</span></div>
         <div class="panel-row"><span class="panel-row-label">Jurisdicción</span><span style="font-size:12px">${card.esCABA?'CABA':card.esProvincia?'Provincia':'—'}</span></div>
       </div>
