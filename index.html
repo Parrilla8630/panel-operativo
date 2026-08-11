@@ -322,19 +322,41 @@ function extractFechaFirma(cls){
   }return null;
 }
 
+// Extrae apellidos/palabras relevantes del título de la carpeta (excluye número de expediente, %, conectores)
+function apellidosDeCarpeta(nombreCarpeta){
+  const n=normalizarNombreRef(nombreCarpeta||'').replace(/\(.*?\)/g,''); // sacar el "(11.352)"
+  return n.split(/[^a-z]+/).filter(t=>t.length>=4&&!['CONF','OTRO','OTRA'].includes(t.toUpperCase()));
+}
+function nombreArchivoPerteneceACarpeta(nombreArchivo,apellidosCarpeta){
+  if(!apellidosCarpeta.length)return true; // si no pudimos extraer nada, no bloqueamos
+  const nl=normalizarNombreRef(nombreArchivo);
+  return apellidosCarpeta.some(ap=>nl.includes(ap));
+}
 function esCertificadoNombre(n){
   const nl=n.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   return n.startsWith('98_')||/^E\d+/i.test(n)||nl.startsWith('dominio')||nl.startsWith('inhibicion');
 }
-function detectarCertificados(atts){return atts.some(a=>esCertificadoNombre(a.name||a.fileName||''));}
-function detectarBorrador(atts){
-  const EXCLUIR=['nota','informe','certificado','formulario','acta','poder','carta','constancia','declaracion jurada','declaración jurada','cedula','cédula','recibo','comprobante','minuta','adecuada','304cccn','304 cccn'];
+function detectarCertificados(atts,nombreCarpeta){
+  const apellidos=apellidosDeCarpeta(nombreCarpeta);
+  return atts.some(a=>{
+    const n=a.name||a.fileName||'';
+    if(!esCertificadoNombre(n))return false;
+    // Los certificados con patrón fijo (98_/E1234) casi siempre son de la carpeta correcta (Trello los sube directo ahí);
+    // pero los de Antonella (DOMINIO/INHIBICION apellido) sí hay que chequear que coincida el apellido
+    const esPatronAntonella=/^(dominio|inhibicion)/i.test(n.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+    if(esPatronAntonella)return nombreArchivoPerteneceACarpeta(n,apellidos);
+    return true;
+  });
+}
+function detectarBorrador(atts,nombreCarpeta){
+  const EXCLUIR=['nota','informe','certificado','formulario','acta','poder','carta','constancia','declaracion jurada','declaración jurada','cedula','cédula','recibo','comprobante','minuta','adecuada','304cccn','304 cccn','testimonio','segunda copia','pago testimonio'];
+  const apellidos=apellidosDeCarpeta(nombreCarpeta);
   return atts.some(a=>{
     const n=(a.name||a.fileName||'').toLowerCase();
     if(!(n.endsWith('.docx')||n.endsWith('.doc')))return false;
     const nl=n.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     if(EXCLUIR.some(ex=>nl.includes(ex.normalize('NFD').replace(/[\u0300-\u036f]/g,''))))return false;
-    return true;
+    return nombreArchivoPerteneceACarpeta(n,apellidos);
   });
 }
 
@@ -390,14 +412,22 @@ async function init(){
 
         const et=parsearET(cls);
         const fechaFirma=extractFechaFirma(cls);
-        const certOk=detectarCertificados(atts);
-        const borrOk=detectarBorrador(atts);
+        const certOk=detectarCertificados(atts,card.name);
+        const borrOk=detectarBorrador(atts,card.name);
 
         // Adjuntos de firma (cert + borrador) con fecha
         const adjsFirma=atts.filter(a=>{
           const n=a.name||a.fileName||'';
-          return esCertificadoNombre(n)||
-            (()=>{const nl=n.toLowerCase();return nl.includes('borrador')||nl.includes('draft')||nl.endsWith('.docx')||nl.endsWith('.doc');})();
+          const apellidosCarpeta=apellidosDeCarpeta(card.name);
+          if(esCertificadoNombre(n)){
+            const esPatronAntonella=/^(dominio|inhibicion)/i.test(n.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+            return esPatronAntonella?nombreArchivoPerteneceACarpeta(n,apellidosCarpeta):true;
+          }
+          const nl=n.toLowerCase();
+          if(nl.includes('borrador')||nl.includes('draft')||nl.endsWith('.docx')||nl.endsWith('.doc')){
+            return nombreArchivoPerteneceACarpeta(n,apellidosCarpeta);
+          }
+          return false;
         });
 
         cards.push({
