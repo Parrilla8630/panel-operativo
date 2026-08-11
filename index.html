@@ -224,7 +224,35 @@ tr:hover td{background:#F8FAFC}
 <script>
 const ME='rocioperezvalenzuela';
 const BOARDS=['LENDAR','REMAX','PARTICULARES'];
-const REFERENCISTAS=['Cyntia','Pilar','Magali','Darío','Dario','Maria Laura','Natalia','Hernán','Hernan'];
+function normalizarNombreRef(t){return (t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+// Diccionario de alias: cada variante/apodo apunta al nombre canónico del referencista
+const ALIAS_REFERENCISTAS={
+  // Cyntia
+  'cyntia':'Cyntia','cynthia':'Cyntia','cintia':'Cyntia','cinthia':'Cyntia','cyntya':'Cyntia',
+  // Pilar
+  'pilar':'Pilar','pili':'Pilar','pilarcita':'Pilar',
+  // Magali
+  'magali':'Magali','magalí':'Magali','maga':'Magali','magaly':'Magali','magalie':'Magali','nicole':'Magali',
+  // Dario
+  'dario':'Dario','dari':'Dario',
+  // Maria Laura
+  'maria laura':'Maria Laura','marialaura':'Maria Laura','ma laura':'Maria Laura','laura':'Maria Laura','maria':'Maria Laura','mary laura':'Maria Laura',
+  // Natalia
+  'natalia canepa':'Natalia','natalia':'Natalia','canepa':'Natalia','cánepa':'Natalia','nati':'Natalia','naty':'Natalia','natty':'Natalia','nata':'Natalia',
+  // Hernan
+  'hernan':'Hernan','hernán':'Hernan','herna':'Hernan'
+};
+// Alias ordenados de más largo a más corto (y sin tildes), para priorizar coincidencias específicas
+const ALIAS_KEYS_ORDENADOS=Object.keys(ALIAS_REFERENCISTAS).map(normalizarNombreRef).sort((a,b)=>b.length-a.length);
+const ALIAS_REFERENCISTAS_N={};
+Object.entries(ALIAS_REFERENCISTAS).forEach(([k,v])=>{ALIAS_REFERENCISTAS_N[normalizarNombreRef(k)]=v;});
+function resolverReferencista(texto){
+  const tN=normalizarNombreRef(texto);
+  for(const alias of ALIAS_KEYS_ORDENADOS){
+    if(tN.includes(alias))return ALIAS_REFERENCISTAS_N[alias];
+  }
+  return null;
+}
 const hoy=new Date(); hoy.setHours(0,0,0,0);
 let allCards=[],tabActual='carpetas';
 
@@ -259,16 +287,11 @@ function parsearET(cls){
       const mRef=t.match(/(?:solicitado?\s+a|sol\.?\s+a|pedido\s+a)\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-Z\s]+?)(?:\s+\d|\s*-|\s*$)/i);
       if(mRef){
         const nombre=mRef[1].trim();
-        // Verificar que sea un referencista conocido
-        const found=REFERENCISTAS.find(r=>nombre.toLowerCase().includes(r.toLowerCase()));
-        if(found)ref=found;
-        else ref=nombre.split(' ')[0]; // tomar primer nombre
+        ref=resolverReferencista(nombre)||nombre.split(' ')[0]; // si no matchea ningún alias, tomar primer nombre tal cual
       }
       if(!ref){
-        // Fallback: buscar nombre de referencista conocido en el texto
-        for(const r of REFERENCISTAS){
-          if(tl.includes(r.toLowerCase())){ref=r;break;}
-        }
+        // Fallback: buscar algún alias conocido en todo el texto del ítem
+        ref=resolverReferencista(t);
       }
 
       // Detectar fecha de vencimiento
