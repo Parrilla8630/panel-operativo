@@ -181,6 +181,9 @@ tr:hover td{background:#F8FAFC}
       <input type="text" id="cfg-smvm" placeholder="SMVM vigente ($)" style="max-width:130px" oninput="guardarConfigAJ()">
       <input type="text" id="cfg-dolar" placeholder="Dólar BNA vendedor" style="max-width:150px" oninput="guardarConfigAJ()">
       <span id="aj-umbral-txt" style="font-size:11px;color:var(--text2);align-self:center"></span>
+      <select id="aj-carpeta-select" onchange="render()" style="margin-left:auto">
+        <option value="">— Ver todas las que tienen novedad —</option>
+      </select>
     </div>
 
     <div class="filters" id="filtros">
@@ -773,10 +776,11 @@ function procesarAJ(card,acciones){
     return{tipo:'cambio',autor:a.memberCreator?.fullName||'—',texto:`Cambió ${campoLabel}: "${valorViejo||''}" → "${valorNuevo||'(ver tarjeta)'}"`,fecha:a.date};
   });
 
-  // Relevancia: marcar si matchea keywords AJ o si toca precio/inversor/carátula
+  // Relevancia: marcar si matchea keywords AJ, o si la mencionan directamente
   actividadNueva.forEach(item=>{
     const t=(item.texto||'').toLowerCase();
     item.relevante=KEYWORDS_AJ.some(k=>t.includes(k));
+    item.mencion=t.includes('@'+ME.toLowerCase())||t.includes('@rociopérezvalenzuela')||t.includes('@rocio');
   });
 
   // Precio y umbral origen de fondos
@@ -798,10 +802,50 @@ function marcarRevisado(cardId){
   render();
 }
 
+function renderTarjetaAJ(c){
+  const aj=c.aj;
+  return `<div class="confronte-card">
+    <div class="confronte-title">
+      <span><a href="${c.url}" target="_blank" style="color:var(--navy);text-decoration:none">${c.nombre}</a> <span style="font-size:11px;font-weight:400;color:var(--text2)">${c.board} · ${c.lista}</span></span>
+      <div style="display:flex;gap:5px;align-items:center">
+        ${aj.alertaFondos?`<span class="pill pill-err">💵 Origen de fondos: U$S ${Math.round(aj.precioUSD).toLocaleString('es-AR')} vs umbral U$S ${Math.round(aj.umbralUSD).toLocaleString('es-AR')}</span>`:''}
+        ${aj.sinRevisar?`<span class="pill pill-warn">${aj.actividadNueva.length} novedad${aj.actividadNueva.length!==1?'es':''}${aj.esPrimeraVez?' (últimas 3 sem.)':''}</span>`:''}
+        ${aj.pendientesActivos.length?`<span class="pill pill-gray">${aj.pendientesActivos.length} OBS activa${aj.pendientesActivos.length!==1?'s':''}</span>`:''}
+        <button class="ver-btn" onclick="marcarRevisado('${c.id}')">✓ Revisado</button>
+      </div>
+    </div>
+    ${aj.actividadNueva.length?`<div style="margin-bottom:8px">
+      ${aj.actividadNueva.map(a=>{
+        const icono=a.mencion?'🔔':a.relevante?'⚖️':(a.tipo==='cambio'?'✏️':'💬');
+        const estilo=a.mencion?'border-color:#dc2626;background:#FEF2F2':a.relevante?'border-color:#d97706;background:#FFFBEB':'';
+        const etiqueta=a.mencion?'<span style="color:#dc2626;font-weight:700">[TE MENCIONAN] </span>':a.relevante?'<span style="color:#d97706;font-weight:700">[AJ] </span>':'';
+        return `<div class="adj-item" style="${estilo}">
+          <span>${icono}</span>
+          <span class="adj-name" style="white-space:normal">${etiqueta}${a.autor}: ${(a.texto||'').slice(0,180)}${(a.texto||'').length>180?'…':''}</span>
+          <span class="adj-date">${new Date(a.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span>
+        </div>`;
+      }).join('')}
+    </div>`:'<div style="font-size:12px;color:var(--text2)">Sin actividad nueva de otros desde tu última revisión.</div>'}
+    ${aj.pendientesActivos.length?`<div style="font-size:11px;color:var(--text2)">
+      <div style="font-weight:600;margin-bottom:4px;color:var(--text)">Pendientes de AJ (⚠ OBS activas):</div>
+      ${aj.pendientesActivos.map(p=>`<div style="padding:4px 0;border-top:1px solid var(--border)">${p.slice(0,220)}${p.length>220?'…':''}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+
 function renderAJ(data){
   const el=document.getElementById('vista-aj');
   const conDatos=data.filter(c=>c.aj&&!c.aj.error);
   if(!conDatos.length){el.innerHTML='<div class="loading">Cargando comentarios y novedades de cada carpeta…</div>';return;}
+
+  // Poblar el desplegable de carpetas (una sola vez, preservando la selección actual)
+  const sel=document.getElementById('aj-carpeta-select');
+  if(sel&&sel.options.length<=1){
+    conDatos.slice().sort((a,b)=>a.nombre.localeCompare(b.nombre)).forEach(c=>{
+      const opt=document.createElement('option');opt.value=c.id;opt.textContent=c.nombre;sel.appendChild(opt);
+    });
+  }
+  const carpetaElegida=sel?sel.value:'';
 
   const hayPrimeraVez=conDatos.some(c=>c.aj.esPrimeraVez&&c.aj.actividadNueva.length);
   const notaPrimeraVez=hayPrimeraVez?`<div style="font-size:11px;color:var(--text2);background:#F8FAFC;border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px">Las carpetas marcadas "(últimas 3 sem.)" son las que todavía no revisaste con este sistema — por eso muestran actividad de varias semanas atrás, no solo de hoy. Tocá "✓ Revisado" en cada una y de ahí en más solo vas a ver lo realmente nuevo.</div>`:'';
@@ -820,6 +864,14 @@ function renderAJ(data){
     return 4;
   };
   const sorted=[...conDatos].sort((a,b)=>orden(a)-orden(b));
+
+  if(carpetaElegida){
+    const c=conDatos.find(x=>x.id===carpetaElegida);
+    if(!c){el.innerHTML='<div class="empty">No se encontró esa carpeta.</div>';return;}
+    el.innerHTML=notaPrimeraVez+renderTarjetaAJ(c)+`<div style="margin-top:10px"><a href="#" onclick="document.getElementById('aj-carpeta-select').value='';render();return false;" style="font-size:11px;color:var(--blue)">← Volver a la vista de todas</a></div>`;
+    return;
+  }
+
   const conAlgo=sorted.filter(c=>orden(c)<4);
   const alDia=sorted.filter(c=>orden(c)===4);
 
@@ -832,31 +884,7 @@ function renderAJ(data){
     return;
   }
 
-  el.innerHTML=notaPrimeraVez+`<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Mostrando ${conAlgo.length} de ${conDatos.length} carpetas — las que tienen algo para revisar.</div>`+conAlgo.map(c=>{
-    const aj=c.aj;
-    return `<div class="confronte-card">
-      <div class="confronte-title">
-        <span><a href="${c.url}" target="_blank" style="color:var(--navy);text-decoration:none">${c.nombre}</a> <span style="font-size:11px;font-weight:400;color:var(--text2)">${c.board} · ${c.lista}</span></span>
-        <div style="display:flex;gap:5px;align-items:center">
-          ${aj.alertaFondos?`<span class="pill pill-err">💵 Origen de fondos: U$S ${Math.round(aj.precioUSD).toLocaleString('es-AR')} vs umbral U$S ${Math.round(aj.umbralUSD).toLocaleString('es-AR')}</span>`:''}
-          ${aj.sinRevisar?`<span class="pill pill-warn">${aj.actividadNueva.length} novedad${aj.actividadNueva.length!==1?'es':''}${aj.esPrimeraVez?' (últimas 3 sem.)':''}</span>`:''}
-          ${aj.pendientesActivos.length?`<span class="pill pill-gray">${aj.pendientesActivos.length} OBS activa${aj.pendientesActivos.length!==1?'s':''}</span>`:''}
-          <button class="ver-btn" onclick="marcarRevisado('${c.id}')">✓ Revisado</button>
-        </div>
-      </div>
-      ${aj.actividadNueva.length?`<div style="margin-bottom:8px">
-        ${aj.actividadNueva.map(a=>`<div class="adj-item" style="${a.relevante?'border-color:#d97706;background:#FFFBEB':''}">
-          <span>${a.tipo==='cambio'?'✏️':'💬'}</span>
-          <span class="adj-name" style="white-space:normal">${a.relevante?'<strong>':''}${a.autor}: ${(a.texto||'').slice(0,180)}${(a.texto||'').length>180?'…':''}${a.relevante?'</strong>':''}</span>
-          <span class="adj-date">${new Date(a.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span>
-        </div>`).join('')}
-      </div>`:''}
-      ${aj.pendientesActivos.length?`<div style="font-size:11px;color:var(--text2)">
-        <div style="font-weight:600;margin-bottom:4px;color:var(--text)">Pendientes de AJ (⚠ OBS activas):</div>
-        ${aj.pendientesActivos.map(p=>`<div style="padding:4px 0;border-top:1px solid var(--border)">${p.slice(0,220)}${p.length>220?'…':''}</div>`).join('')}
-      </div>`:''}
-    </div>`;
-  }).join('')+bloqueAlDia;
+  el.innerHTML=notaPrimeraVez+`<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Mostrando ${conAlgo.length} de ${conDatos.length} carpetas — las que tienen algo para revisar.</div>`+conAlgo.map(renderTarjetaAJ).join('')+bloqueAlDia;
 }
 
 // ── GOOGLE CALENDAR ──
